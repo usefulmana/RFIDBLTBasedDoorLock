@@ -1,0 +1,168 @@
+/*
+ Author: Nguyen Le Bao Anh (s3616128)
+ Assignment: II of COSC2500
+ Created on: 03/01/2019
+ This program is to program Arduino Uno board to act as a RFID-based and Bluetooth-based security door.
+ This program is based on the work of Muhammad Aquib from electronicshobbyists.com with several modifications with will be specified in the final report.
+ */
+
+ // Importing necessary libraries
+#include <MFRC522.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+#include <SPI.h>
+#include <SoftwareSerial.h>
+ // Create instances
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+SoftwareSerial mySerial(2, 3); // RX, TX
+Servo sg90;
+MFRC522 mfrc522(10, 9); // MFRC522 mfrc522(SS_PIN, RST_PIN)
+
+ // Initialize Pins for led's, servo and buzzer
+constexpr uint8_t blueLed = 7;
+constexpr uint8_t greenLed = 6;
+constexpr uint8_t redLed = 5;
+constexpr uint8_t servoPin = 8;
+constexpr uint8_t buzzer = 4;
+
+ // RFID Tag ID
+String tagUID = "9C 3A B5 63"; 
+
+void setup() {
+  
+ // Arduino Pin configuration
+  pinMode(buzzer, OUTPUT);
+  pinMode(redLed, OUTPUT);
+  pinMode(greenLed, OUTPUT);
+  sg90.attach(servoPin);  //Declare pin 8 for servo
+  sg90.write(0); // Set initial position at 90 degrees
+
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+  delay(1000);
+  Serial.println("Debug Mode"); // Print command on the Serial Monitor for debug purposes
+
+  // Start LCD
+  lcd.begin();   // LCD screen
+  lcd.backlight();
+  lcd.clear(); // Clear LCD screen
+  
+  SPI.begin();      // Init SPI bus
+  mfrc522.PCD_Init();   // Init MFRC522
+  
+
+  // Set the data rate for the SoftwareSerial port
+  mySerial.begin(9600);
+  mySerial.write("\nEnter a command \n 0. Close door\n 1. Open door"); // This message is for remote access control device.
+}
+
+void loop() { // run over and over
+
+    // Print welcome message in the LCD
+    lcd.setCursor(0, 0);
+    lcd.print("   Door Lock");
+    lcd.setCursor(0, 1);
+    lcd.print(" Scan Your Tag ");
+
+    // Look for new cards
+    if ( mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) // If there is a new card and the RFID reader is able to read it proceed
+    {
+        //Reading from the card
+      String tag = "";
+      for (byte j = 0; j < mfrc522.uid.size; j++)
+      {
+        tag.concat(String(mfrc522.uid.uidByte[j] < 0x10 ? " 0" : " "));
+        tag.concat(String(mfrc522.uid.uidByte[j], HEX));
+      }
+      tag.toUpperCase(); // Capitalize the final String
+  
+      //Checking the card
+      if (tag.substring(1) == tagUID)
+      {
+        // If UID of tag is matched.
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("  Tag Matched");
+        lcd.setCursor(0, 1);
+        lcd.print("Access Granted");
+        tone(buzzer,3900,300); // Buzzer makes a quick beep
+        sg90.write(180); // Motor turns 180 degrees
+        digitalWrite(greenLed, HIGH); // Green LED lights up
+        delay(5000); // Door will be unlocked for 5 seconds
+        digitalWrite(greenLed, LOW); // Green LED off
+        sg90.write(0); // Motor returns to original position
+        lcd.clear(); // Clear LCD
+      }
+      else
+      {
+        // If UID of tag is not matched.
+        // Display message
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Wrong Tag Shown");
+        lcd.setCursor(0, 1);
+        lcd.print("Access Denied");
+        mySerial.println("\nWrong Tag Scanned"); // Notify the remote access device.
+
+        // 1 quick beep, the 2nd beep is slightly longer to. Red LED to let users know they scan the wrong tags.
+        tone(buzzer,3900,100);
+        delay(400);
+        tone(buzzer,3900,300);
+        digitalWrite(redLed, HIGH);
+        delay(3000);
+        digitalWrite(redLed, LOW);
+        lcd.clear();
+      }
+  }
+  else // If no RFID card is present. Receive commands from the remote access device. 
+  {    
+    if (mySerial.read() == '0') // If 0 is entered on the terminal, door will be locked
+    {
+      Serial.write(mySerial.read()); // Display the command on the serial monitor
+      delay(1000); // wait
+      // Display message on the LCD
+      lcd.clear();0
+      lcd.setCursor(0, 0);
+      lcd.print("     Locked");
+      sg90.write(0); // Reset motor
+      // Display feedbacks on both terminals
+      mySerial.print("Locked\n");
+      Serial.print("Locked\n");
+      // 1 quick beep, the 2nd beep is slightly longer to. Red LED to let users know that the door is locked.
+      tone(buzzer,3900,100);
+      delay(400);
+      tone(buzzer,3900,300);
+      digitalWrite(redLed, HIGH);
+      delay(3000);
+      digitalWrite(redLed, LOW);
+      lcd.clear();
+      mySerial.flush();
+      Serial.flush();     
+    }
+    else if (mySerial.read() == '1')  // If 1 is entered on the terminal, door will be unlocked
+    {
+      Serial.write(mySerial.read()); // Display the command on the serial monitor
+      delay(1000);
+      // Display message on the LCD
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("    Unlocked");
+      
+       // Display feedbacks on both terminals
+      mySerial.print("Unlocked\n");
+      Serial.print("Unlocked\n");
+
+      //
+      tone(buzzer,3900,300);
+      sg90.write(180); // Open door
+      digitalWrite(greenLed, HIGH);
+      delay(5000); // Door will be unlocked for 5 seconds 
+      digitalWrite(greenLed, LOW);
+      sg90.write(0);
+      lcd.clear();
+      mySerial.flush();
+      Serial.flush();
+  }
+  }
+   
+}
